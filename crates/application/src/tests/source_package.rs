@@ -87,3 +87,38 @@ pub async fn assemble_package<RT: Runtime>(
     }
     Ok(modules.into_values().collect())
 }
+
+#[convex_macro::test_runtime]
+async fn test_source_package_functionality(rt: TestRuntime) -> anyhow::Result<()> {
+    let application = Application::new_for_tests(&rt).await?;
+
+    let path: CanonicalizedModulePath = "c.js".parse()?;
+    let config = ModuleConfig {
+        path: path.clone().into(),
+        source: NODE_SOURCE.to_owned(),
+        source_map: Some(SOURCE_MAP.to_owned()),
+        environment: ModuleEnvironment::Node,
+    };
+    let mut modules = BTreeMap::new();
+    modules.insert(path.clone(), Some(config));
+    let mut tx = application.begin(Identity::system()).await?;
+    let package = assemble_package(&mut tx, application.modules_cache(), modules).await?;
+
+    let SourcePackage {
+        storage_key,
+        sha256,
+        ..
+    } = application.upload_package(&package, None).await?;
+
+    let result =
+        download_package(application.modules_storage().clone(), storage_key, sha256).await?;
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(&result[&path].source, NODE_SOURCE);
+    assert_eq!(
+        result[&path].source_map.as_ref().map(|s| &s[..]),
+        Some(SOURCE_MAP)
+    );
+
+    Ok(())
+}
