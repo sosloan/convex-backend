@@ -197,3 +197,68 @@ async fn test_env_variable_cannot_set_system_name(rt: ProdRuntime) -> anyhow::Re
 
     Ok(())
 }
+
+// Test that environment variables can be updated
+#[convex_macro::test_runtime]
+async fn test_env_variable_update(rt: TestRuntime) -> anyhow::Result<()> {
+    let application = Application::new_for_tests(&rt).await?;
+    application.load_udf_tests_modules().await?;
+
+    let name: EnvVarName = "name".parse()?;
+    let value: EnvVarValue = "value".parse()?;
+    let value2: EnvVarValue = "value2".parse()?;
+
+    let mut tx = application.begin(Identity::system()).await?;
+    application
+        .create_environment_variables(
+            &mut tx,
+            vec![EnvironmentVariable::new(name.clone(), value.clone())],
+        )
+        .await?;
+
+    application
+        .update_environment_variables(
+            &mut tx,
+            vec![EnvVarChange::Set(EnvironmentVariable::new(
+                name.clone(),
+                value2.clone(),
+            ))],
+        )
+        .await?;
+
+    let after = EnvironmentVariablesModel::new(&mut tx)
+        .get(&name)
+        .await?
+        .unwrap()
+        .into_value();
+    assert_eq!(after.value, value2);
+
+    Ok(())
+}
+
+// Test that environment variables can be deleted
+#[convex_macro::test_runtime]
+async fn test_env_variable_delete(rt: TestRuntime) -> anyhow::Result<()> {
+    let application = Application::new_for_tests(&rt).await?;
+    application.load_udf_tests_modules().await?;
+
+    let name: EnvVarName = "name".parse()?;
+    let value: EnvVarValue = "value".parse()?;
+
+    let mut tx = application.begin(Identity::system()).await?;
+    application
+        .create_environment_variables(
+            &mut tx,
+            vec![EnvironmentVariable::new(name.clone(), value.clone())],
+        )
+        .await?;
+
+    application
+        .update_environment_variables(&mut tx, vec![EnvVarChange::Unset(name.clone())])
+        .await?;
+
+    let after = EnvironmentVariablesModel::new(&mut tx).get(&name).await?;
+    assert!(after.is_none());
+
+    Ok(())
+}

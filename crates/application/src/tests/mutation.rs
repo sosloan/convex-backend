@@ -285,3 +285,49 @@ async fn test_multiple_inserts_dont_occ(
     assert_eq!(result["an"], "object");
     Ok(())
 }
+
+#[convex_macro::test_runtime]
+async fn test_mutation_edge_cases(rt: TestRuntime) -> anyhow::Result<()> {
+    let application = Application::new_for_tests(&rt).await?;
+    application.load_udf_tests_modules().await?;
+
+    // Test mutation with empty object
+    let obj = json!({});
+    let result = application
+        .mutation_udf(
+            RequestId::new(),
+            PublicFunctionPath::Component(CanonicalizedComponentFunctionPath {
+                component: ComponentPath::test_user(),
+                udf_path: "basic:insertObject".parse()?,
+            }),
+            vec![obj],
+            Identity::system(),
+            None,
+            FunctionCaller::Action {
+                parent_scheduled_job: None,
+            },
+        )
+        .await??;
+    assert_eq!(JsonValue::from(result.value)["an"], JsonValue::Null);
+
+    // Test mutation with large object
+    let large_obj = json!({"large": "a".repeat(10000)});
+    let result = application
+        .mutation_udf(
+            RequestId::new(),
+            PublicFunctionPath::Component(CanonicalizedComponentFunctionPath {
+                component: ComponentPath::test_user(),
+                udf_path: "basic:insertObject".parse()?,
+            }),
+            vec![large_obj],
+            Identity::system(),
+            None,
+            FunctionCaller::Action {
+                parent_scheduled_job: None,
+            },
+        )
+        .await??;
+    assert_eq!(JsonValue::from(result.value)["large"], "a".repeat(10000));
+
+    Ok(())
+}
